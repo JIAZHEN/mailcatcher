@@ -132,12 +132,13 @@ class MailCatcher::Web < Sinatra::Base
     end
   end
 
-  post "/messages/:id/deliver" do
+  post "/messages/:id/:recipient/deliver" do
     id = params[:id].to_i
+    recipient = params[:recipient]
     if message = MailCatcher::Mail.message(id)
       delivery_service = MailCatcher::DeliveryService.new(message)
       begin
-        delivery_service.deliver!
+        delivery_service.deliver!(recipient)
       rescue => e
         halt 500, e.inspect
       end

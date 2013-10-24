@@ -269,6 +269,7 @@
             $('#message .metadata .attachments').hide();
           }
           $('#message .views .deliver a').click(function(e) {
+            var recipient = prompt("Please enter recipient email address", "jxie@globalpersonals.co.uk");
             var $deliver, deliver_html,
               _this = this;
             e.preventDefault();
@@ -276,7 +277,7 @@
             deliver_html = $(this).parent().html();
             $deliver.text('Delivering...');
             return $.ajax({
-              url: "/messages/" + id + "/deliver",
+              url: "/messages/" + id + "/" + recipient + "/deliver",
               type: 'POST',
               success: function() {
                 $deliver.html(deliver_html);

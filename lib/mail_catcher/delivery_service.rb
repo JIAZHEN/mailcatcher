@@ -19,11 +19,11 @@ class MailCatcher::DeliveryService
     self.class
   end
 
-  def deliver!
+  def deliver!(recipient = config.recipient)
     smtp = Net::SMTP.new config.address, config.port
     smtp.enable_starttls
     smtp.start(config.domain, config.user_name, config.password, config.authentication) do |smtp| 
-      smtp.send_message message['source'], config.user_name, config.recipient || message['recipients']
+      smtp.send_message message['source'], config.user_name, recipient || message['recipients']
     end
   end
 
