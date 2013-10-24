@@ -22,22 +22,18 @@ class MailCatcher
     $('#message .views .analysis.tab a').live 'click', (e) =>
       e.preventDefault()
       @loadMessageAnalysis @selectedMessage()
-      
-    $('#message iframe').load =>
-      @decorateMessageBody()
 
     $('#resizer').live
-      mousedown: (e) =>
+      mousedown: (e) ->
         e.preventDefault()
         $(window).bind events =
-          mouseup: (e) =>
+          mouseup: (e) ->
             e.preventDefault()
             $(window).unbind events
-          mousemove: (e) =>
+          mousemove: (e) ->
             e.preventDefault()
-            @resizeTo e.clientY
-
-    @resizeToSaved()
+            $('#messages').css
+              height: e.clientY - $('#messages').offset().top
 
     $('nav.app .clear a').live 'click', (e) =>
       e.preventDefault()
@@ -45,10 +41,12 @@ class MailCatcher
         $.ajax
           url: '/messages'
           type: 'DELETE'
-          success: =>
-            @unselectMessage()
+          success: ->
+            $('#messages tbody, #message .metadata dd').empty()
+            $('#message .metadata .attachments').hide()
+            $('#message iframe').attr 'src', 'about:blank'
           error: ->
-            alert 'Error while clearing all messages.'
+            alert 'Error while quitting.'
 
     $('nav.app .quit a').live 'click', (e) =>
       e.preventDefault()
@@ -61,53 +59,26 @@ class MailCatcher
             alert 'Error while quitting.'
 
     key 'up', =>
-      if @selectedMessage()
-        @loadMessage $('#messages tr.selected').prev().data('message-id')
-      else
-        @loadMessage $('#messages tbody tr[data-message-id]:first').data('message-id')
-      false
+      id = @selectedMessage() || 1
+      id -=  1  if id > 1
+      @loadMessage(id)
 
     key 'down', =>
-      if @selectedMessage()
-        @loadMessage $('#messages tr.selected').next().data('message-id')
-      else
-        @loadMessage $('#messages tbody tr[data-message-id]:first').data('message-id')
-      false
+      id = @selectedMessage() || @messagesCount()
+      id += 1 if id < @messagesCount()
+      @loadMessage(id)
 
     key '⌘+up, ctrl+up', =>
-      @loadMessage $('#messages tbody tr[data-message-id]:first').data('message-id')
-      false
+      @loadMessage(1)
 
     key '⌘+down, ctrl+down', =>
-      @loadMessage $('#messages tbody tr[data-message-id]:last').data('message-id')
-      false
+      @loadMessage @messagesCount()
 
     key 'left', =>
       @openTab @previousTab()
-      false
 
     key 'right', =>
       @openTab @nextTab()
-      false
-
-    key 'backspace, delete', =>
-      id = @selectedMessage()
-      if id?
-        $.ajax
-          url: '/messages/' + id
-          type: 'DELETE'
-          success: =>
-            messageRow = $("#messages tbody tr[data-message-id='#{id}']")
-            switchTo = messageRow.next().data('message-id') || messageRow.prev().data('message-id')
-            messageRow.remove()
-            if switchTo
-              @loadMessage switchTo
-            else
-              @unselectMessage()
-
-          error: ->
-            alert 'Error while removing message.'
-      false
 
     @refresh()
     @subscribe()
@@ -177,39 +148,22 @@ class MailCatcher
     $('#messages tbody tr').show()
 
   addMessage: (message) ->
-    $('#messages tbody').prepend \
+    $('#messages tbody').append \
       $('<tr />').attr('data-message-id', message.id.toString())
         .append($('<td/>').text(message.sender or "No sender").toggleClass("blank", !message.sender))
         .append($('<td/>').text((message.recipients || []).join(', ') or "No receipients").toggleClass("blank", !message.recipients.length))
         .append($('<td/>').text(message.subject or "No subject").toggleClass("blank", !message.subject))
         .append($('<td/>').text @formatDate message.created_at)
 
-  scrollToRow: (row) ->
-    relativePosition = row.offset().top - $('#messages').offset().top
-    if relativePosition < 0
-      $('#messages').scrollTop($('#messages').scrollTop() + relativePosition - 20)
-    else
-      overflow = relativePosition + row.height() - $('#messages').height()
-      if overflow > 0
-        $('#messages').scrollTop($('#messages').scrollTop() + overflow + 20)
-
-  unselectMessage: ->
-    $('#messages tbody, #message .metadata dd').empty()
-    $('#message .metadata .attachments').hide()
-    $('#message iframe').attr 'src', 'about:blank'
-    null
-
   loadMessage: (id) ->
     id = id.id if id?.id?
     id ||= $('#messages tr.selected').attr 'data-message-id'
 
     if id?
-      $("#messages tbody tr:not([data-message-id='#{id}'])").removeClass 'selected'
-      messageRow = $("#messages tbody tr[data-message-id='#{id}']")
-      messageRow.addClass 'selected'
-      @scrollToRow(messageRow)
+      $('#messages tbody tr:not([data-message-id="'+id+'"])').removeClass 'selected'
+      $('#messages tbody tr[data-message-id="'+id+'"]').addClass 'selected'
 
-      $.getJSON "/messages/#{id}.json", (message) =>
+      $.getJSON '/messages/' + id + '.json', (message) =>
         $('#message .metadata dd.created_at').text @formatDate message.created_at
         $('#message .metadata dd.from').text message.sender
         $('#message .metadata dd.to').text (message.recipients || []).join(', ')
@@ -218,7 +172,7 @@ class MailCatcher
           $el = $(el)
           format = $el.attr 'data-message-format'
           if $.inArray(format, message.formats) >= 0
-            $el.find('a').attr('href', "/messages/#{id}.#{format}")
+            $el.find('a').attr('href', '/messages/' + id + '.' + format)
             $el.show()
           else
             $el.hide()
@@ -235,6 +189,21 @@ class MailCatcher
           $('#message .metadata .attachments').show()
         else
           $('#message .metadata .attachments').hide()
+
+        $('#message .views .deliver a').click (e)->
+          e.preventDefault()
+          $deliver = $(this).parent()
+          deliver_html = $(this).parent().html()
+          $deliver.text('Delivering...')
+          $.ajax
+            url: "/messages/#{id}/deliver"
+            type: 'POST'
+            success: =>
+              $deliver.html(deliver_html)
+              alert 'Message successfully delivered' 
+            error: =>
+              $deliver.html(deliver_html)
+              alert 'An error occurred while attempting to deliver this message'
 
         $('#message .views .download a').attr 'href', "/messages/#{id}.eml"
 
@@ -256,22 +225,6 @@ class MailCatcher
     if id?
       $('#message iframe').attr "src", "/messages/#{id}.#{format}"
 
-      app = this
-
-  decorateMessageBody: ->
-    format = $('#message .views .tab.format.selected').attr 'data-message-format'
-          
-    switch format 
-      when 'html'
-        body = $('#message iframe').contents().find('body')
-        $("a", body).attr("target", "_blank")
-      when 'plain'
-        message_iframe = $('#message iframe').contents()
-        text = message_iframe.text()
-        text = text.replace(/((http|ftp|https):\/\/[\w\-_]+(\.[\w\-_]+)+([\w\-\.,@?^=%&amp;:\/~\+#]*[\w\-\@?^=%&amp;\/~\+#])?)/g, '<a href="$1" target="_blank">$1</a>')
-        text = text.replace(/\n/g, '<br/>')
-        message_iframe.find('html').html('<html><body>' + text + '</html></body>')
-
   loadMessageAnalysis: (id) ->
     id ||= @selectedMessage()
 
@@ -290,7 +243,7 @@ class MailCatcher
           <body class="iframe">
           <h1>Analyse your email with Fractal</h1>
           <p><a href="http://getfractal.com/" target="_blank">Fractal</a> is a really neat service that applies common email design and development knowledge from <a href="http://www.email-standards.org/" target="_blank">Email Standards Project</a> to your HTML email and tells you what you've done wrong or what you should do instead.</p>
-          <p>Please note that this <strong>sends your email to the Fractal service</strong> for analysis. Read their <a href="https://www.getfractal.com/page/terms" target="_blank">terms of service</a> if you're paranoid.</p>
+          <p>Please note that this <strong>sends your email to the Fractal service</strong> for analysis. Read their <a href="http://getfractal.com/terms" target="_blank">terms of service</a> if you're paranoid.</p>
           <form>
           <input type="submit" value="Analyse" /><span class="loading" style="color: #999; display: none">Analysing&hellip;</span>
           </form>
@@ -327,16 +280,5 @@ class MailCatcher
     unless @refreshInterval?
       @refreshInterval = setInterval (=> @refresh()), 1000
 
-  resizeToSavedKey: 'mailcatcherSeparatorHeight'
-
-  resizeTo: (height) ->
-    $('#messages').css
-      height: height - $('#messages').offset().top
-    window.localStorage?.setItem(@resizeToSavedKey, height)
-
-  resizeToSaved: ->
-    height = parseInt(window.localStorage?.getItem(@resizeToSavedKey))
-    unless isNaN height
-      @resizeTo height
 
 $ -> window.MailCatcher = new MailCatcher

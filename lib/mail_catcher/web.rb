@@ -10,7 +10,7 @@ class Sinatra::Request
 end
 
 class MailCatcher::Web < Sinatra::Base
-  set :root, File.expand_path("#{__FILE__}/../../..")
+  set :root, Pathname.new(__FILE__).dirname.parent.parent
   set :haml, :format => :html5
 
   get '/' do
@@ -48,7 +48,7 @@ class MailCatcher::Web < Sinatra::Base
         "formats" => [
           "source",
           ("html" if MailCatcher::Mail.message_has_html? id),
-          ("plain" if MailCatcher::Mail.message_has_plain? id)
+          ("plain" if MailCatcher::Mail.message_has_plain? id),
         ].compact,
         "attachments" => MailCatcher::Mail.message_attachments(id).map do |attachment|
           attachment.merge({"href" => "/messages/#{escape(id)}/parts/#{escape(attachment['cid'])}"})
@@ -68,6 +68,9 @@ class MailCatcher::Web < Sinatra::Base
 
       # Rewrite body to link to embedded attachments served by cid
       body.gsub! /cid:([^'"> ]+)/, "#{id}/parts/\\1"
+
+      # Rewrite body to open links in a new window
+      body.gsub! /<a\s+/, '<a target="_blank" '
 
       body
     else
@@ -129,11 +132,16 @@ class MailCatcher::Web < Sinatra::Base
     end
   end
 
-  delete '/messages/:id' do
+  post "/messages/:id/deliver" do
     id = params[:id].to_i
     if message = MailCatcher::Mail.message(id)
-      MailCatcher::Mail.delete_message!(id)
-      status 204
+      delivery_service = MailCatcher::DeliveryService.new(message)
+      begin
+        delivery_service.deliver!
+      rescue => e
+        halt 500, e.inspect
+      end
+      "" # Return 200 with an empty body
     else
       not_found
     end

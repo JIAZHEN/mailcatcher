@@ -8,12 +8,18 @@
   };
 
   MailCatcher = (function() {
+
     function MailCatcher() {
       this.nextTab = __bind(this.nextTab, this);
+
       this.previousTab = __bind(this.previousTab, this);
+
       this.openTab = __bind(this.openTab, this);
+
       this.selectedTab = __bind(this.selectedTab, this);
+
       this.getTab = __bind(this.getTab, this);
+
       var _this = this;
       $('#messages tr').live('click', function(e) {
         e.preventDefault();
@@ -36,9 +42,6 @@
         e.preventDefault();
         return _this.loadMessageAnalysis(_this.selectedMessage());
       });
-      $('#message iframe').load(function() {
-        return _this.decorateMessageBody();
-      });
       $('#resizer').live({
         mousedown: function(e) {
           var events;
@@ -50,12 +53,13 @@
             },
             mousemove: function(e) {
               e.preventDefault();
-              return _this.resizeTo(e.clientY);
+              return $('#messages').css({
+                height: e.clientY - $('#messages').offset().top
+              });
             }
           });
         }
       });
-      this.resizeToSaved();
       $('nav.app .clear a').live('click', function(e) {
         e.preventDefault();
         if (confirm("You will lose all your received messages.\n\nAre you sure you want to clear all messages?")) {
@@ -63,10 +67,12 @@
             url: '/messages',
             type: 'DELETE',
             success: function() {
-              return _this.unselectMessage();
+              $('#messages tbody, #message .metadata dd').empty();
+              $('#message .metadata .attachments').hide();
+              return $('#message iframe').attr('src', 'about:blank');
             },
             error: function() {
-              return alert('Error while clearing all messages.');
+              return alert('Error while quitting.');
             }
           });
         }
@@ -86,61 +92,32 @@
         }
       });
       key('up', function() {
-        if (_this.selectedMessage()) {
-          _this.loadMessage($('#messages tr.selected').prev().data('message-id'));
-        } else {
-          _this.loadMessage($('#messages tbody tr[data-message-id]:first').data('message-id'));
+        var id;
+        id = _this.selectedMessage() || 1;
+        if (id > 1) {
+          id -= 1;
         }
-        return false;
+        return _this.loadMessage(id);
       });
       key('down', function() {
-        if (_this.selectedMessage()) {
-          _this.loadMessage($('#messages tr.selected').next().data('message-id'));
-        } else {
-          _this.loadMessage($('#messages tbody tr[data-message-id]:first').data('message-id'));
+        var id;
+        id = _this.selectedMessage() || _this.messagesCount();
+        if (id < _this.messagesCount()) {
+          id += 1;
         }
-        return false;
+        return _this.loadMessage(id);
       });
       key('⌘+up, ctrl+up', function() {
-        _this.loadMessage($('#messages tbody tr[data-message-id]:first').data('message-id'));
-        return false;
+        return _this.loadMessage(1);
       });
       key('⌘+down, ctrl+down', function() {
-        _this.loadMessage($('#messages tbody tr[data-message-id]:last').data('message-id'));
-        return false;
+        return _this.loadMessage(_this.messagesCount());
       });
       key('left', function() {
-        _this.openTab(_this.previousTab());
-        return false;
+        return _this.openTab(_this.previousTab());
       });
       key('right', function() {
-        _this.openTab(_this.nextTab());
-        return false;
-      });
-      key('backspace, delete', function() {
-        var id;
-        id = _this.selectedMessage();
-        if (id != null) {
-          $.ajax({
-            url: '/messages/' + id,
-            type: 'DELETE',
-            success: function() {
-              var messageRow, switchTo;
-              messageRow = $("#messages tbody tr[data-message-id='" + id + "']");
-              switchTo = messageRow.next().data('message-id') || messageRow.prev().data('message-id');
-              messageRow.remove();
-              if (switchTo) {
-                return _this.loadMessage(switchTo);
-              } else {
-                return _this.unselectMessage();
-              }
-            },
-            error: function() {
-              return alert('Error while removing message.');
-            }
-          });
-        }
-        return false;
+        return _this.openTab(_this.nextTab());
       });
       this.refresh();
       this.subscribe();
@@ -249,42 +226,19 @@
     };
 
     MailCatcher.prototype.addMessage = function(message) {
-      return $('#messages tbody').prepend($('<tr />').attr('data-message-id', message.id.toString()).append($('<td/>').text(message.sender || "No sender").toggleClass("blank", !message.sender)).append($('<td/>').text((message.recipients || []).join(', ') || "No receipients").toggleClass("blank", !message.recipients.length)).append($('<td/>').text(message.subject || "No subject").toggleClass("blank", !message.subject)).append($('<td/>').text(this.formatDate(message.created_at))));
-    };
-
-    MailCatcher.prototype.scrollToRow = function(row) {
-      var overflow, relativePosition;
-      relativePosition = row.offset().top - $('#messages').offset().top;
-      if (relativePosition < 0) {
-        return $('#messages').scrollTop($('#messages').scrollTop() + relativePosition - 20);
-      } else {
-        overflow = relativePosition + row.height() - $('#messages').height();
-        if (overflow > 0) {
-          return $('#messages').scrollTop($('#messages').scrollTop() + overflow + 20);
-        }
-      }
-    };
-
-    MailCatcher.prototype.unselectMessage = function() {
-      $('#messages tbody, #message .metadata dd').empty();
-      $('#message .metadata .attachments').hide();
-      $('#message iframe').attr('src', 'about:blank');
-      return null;
+      return $('#messages tbody').append($('<tr />').attr('data-message-id', message.id.toString()).append($('<td/>').text(message.sender || "No sender").toggleClass("blank", !message.sender)).append($('<td/>').text((message.recipients || []).join(', ') || "No receipients").toggleClass("blank", !message.recipients.length)).append($('<td/>').text(message.subject || "No subject").toggleClass("blank", !message.subject)).append($('<td/>').text(this.formatDate(message.created_at))));
     };
 
     MailCatcher.prototype.loadMessage = function(id) {
-      var messageRow,
-        _this = this;
+      var _this = this;
       if ((id != null ? id.id : void 0) != null) {
         id = id.id;
       }
       id || (id = $('#messages tr.selected').attr('data-message-id'));
       if (id != null) {
-        $("#messages tbody tr:not([data-message-id='" + id + "'])").removeClass('selected');
-        messageRow = $("#messages tbody tr[data-message-id='" + id + "']");
-        messageRow.addClass('selected');
-        this.scrollToRow(messageRow);
-        return $.getJSON("/messages/" + id + ".json", function(message) {
+        $('#messages tbody tr:not([data-message-id="' + id + '"])').removeClass('selected');
+        $('#messages tbody tr[data-message-id="' + id + '"]').addClass('selected');
+        return $.getJSON('/messages/' + id + '.json', function(message) {
           var $ul;
           $('#message .metadata dd.created_at').text(_this.formatDate(message.created_at));
           $('#message .metadata dd.from').text(message.sender);
@@ -295,7 +249,7 @@
             $el = $(el);
             format = $el.attr('data-message-format');
             if ($.inArray(format, message.formats) >= 0) {
-              $el.find('a').attr('href', "/messages/" + id + "." + format);
+              $el.find('a').attr('href', '/messages/' + id + '.' + format);
               return $el.show();
             } else {
               return $el.hide();
@@ -314,6 +268,26 @@
           } else {
             $('#message .metadata .attachments').hide();
           }
+          $('#message .views .deliver a').click(function(e) {
+            var $deliver, deliver_html,
+              _this = this;
+            e.preventDefault();
+            $deliver = $(this).parent();
+            deliver_html = $(this).parent().html();
+            $deliver.text('Delivering...');
+            return $.ajax({
+              url: "/messages/" + id + "/deliver",
+              type: 'POST',
+              success: function() {
+                $deliver.html(deliver_html);
+                return alert('Message successfully delivered');
+              },
+              error: function() {
+                $deliver.html(deliver_html);
+                return alert('An error occurred while attempting to deliver this message');
+              }
+            });
+          });
           $('#message .views .download a').attr('href', "/messages/" + id + ".eml");
           if ($('#message .views .tab.analysis.selected').length) {
             return _this.loadMessageAnalysis();
@@ -325,31 +299,13 @@
     };
 
     MailCatcher.prototype.loadMessageBody = function(id, format) {
-      var app;
       id || (id = this.selectedMessage());
       format || (format = $('#message .views .tab.format.selected').attr('data-message-format'));
       format || (format = 'html');
       $("#message .views .tab[data-message-format=\"" + format + "\"]:not(.selected)").addClass('selected');
       $("#message .views .tab:not([data-message-format=\"" + format + "\"]).selected").removeClass('selected');
       if (id != null) {
-        $('#message iframe').attr("src", "/messages/" + id + "." + format);
-        return app = this;
-      }
-    };
-
-    MailCatcher.prototype.decorateMessageBody = function() {
-      var body, format, message_iframe, text;
-      format = $('#message .views .tab.format.selected').attr('data-message-format');
-      switch (format) {
-        case 'html':
-          body = $('#message iframe').contents().find('body');
-          return $("a", body).attr("target", "_blank");
-        case 'plain':
-          message_iframe = $('#message iframe').contents();
-          text = message_iframe.text();
-          text = text.replace(/((http|ftp|https):\/\/[\w\-_]+(\.[\w\-_]+)+([\w\-\.,@?^=%&amp;:\/~\+#]*[\w\-\@?^=%&amp;\/~\+#])?)/g, '<a href="$1" target="_blank">$1</a>');
-          text = text.replace(/\n/g, '<br/>');
-          return message_iframe.find('html').html('<html><body>' + text + '</html></body>');
+        return $('#message iframe').attr("src", "/messages/" + id + "." + format);
       }
     };
 
@@ -359,7 +315,7 @@
       $("#message .views .analysis.tab:not(.selected)").addClass('selected');
       $("#message .views :not(.analysis).tab.selected").removeClass('selected');
       if (id != null) {
-        $iframe = $('#message iframe').contents().children().html("<html>\n<head>\n<title>Analysis</title>\n" + ($('link[rel="stylesheet"]')[0].outerHTML) + "\n</head>\n<body class=\"iframe\">\n<h1>Analyse your email with Fractal</h1>\n<p><a href=\"http://getfractal.com/\" target=\"_blank\">Fractal</a> is a really neat service that applies common email design and development knowledge from <a href=\"http://www.email-standards.org/\" target=\"_blank\">Email Standards Project</a> to your HTML email and tells you what you've done wrong or what you should do instead.</p>\n<p>Please note that this <strong>sends your email to the Fractal service</strong> for analysis. Read their <a href=\"https://www.getfractal.com/page/terms\" target=\"_blank\">terms of service</a> if you're paranoid.</p>\n<form>\n<input type=\"submit\" value=\"Analyse\" /><span class=\"loading\" style=\"color: #999; display: none\">Analysing&hellip;</span>\n</form>\n</body>\n</html>");
+        $iframe = $('#message iframe').contents().children().html("<html>\n<head>\n<title>Analysis</title>\n" + ($('link[rel="stylesheet"]')[0].outerHTML) + "\n</head>\n<body class=\"iframe\">\n<h1>Analyse your email with Fractal</h1>\n<p><a href=\"http://getfractal.com/\" target=\"_blank\">Fractal</a> is a really neat service that applies common email design and development knowledge from <a href=\"http://www.email-standards.org/\" target=\"_blank\">Email Standards Project</a> to your HTML email and tells you what you've done wrong or what you should do instead.</p>\n<p>Please note that this <strong>sends your email to the Fractal service</strong> for analysis. Read their <a href=\"http://getfractal.com/terms\" target=\"_blank\">terms of service</a> if you're paranoid.</p>\n<form>\n<input type=\"submit\" value=\"Analyse\" /><span class=\"loading\" style=\"color: #999; display: none\">Analysing&hellip;</span>\n</form>\n</body>\n</html>");
         return $form = $iframe.find('form').submit(function(e) {
           e.preventDefault();
           $(this).find('input[type="submit"]').attr('disabled', 'disabled').end().find('.loading').show();
@@ -403,24 +359,6 @@
         return this.refreshInterval = setInterval((function() {
           return _this.refresh();
         }), 1000);
-      }
-    };
-
-    MailCatcher.prototype.resizeToSavedKey = 'mailcatcherSeparatorHeight';
-
-    MailCatcher.prototype.resizeTo = function(height) {
-      var _ref;
-      $('#messages').css({
-        height: height - $('#messages').offset().top
-      });
-      return (_ref = window.localStorage) != null ? _ref.setItem(this.resizeToSavedKey, height) : void 0;
-    };
-
-    MailCatcher.prototype.resizeToSaved = function() {
-      var height, _ref;
-      height = parseInt((_ref = window.localStorage) != null ? _ref.getItem(this.resizeToSavedKey) : void 0);
-      if (!isNaN(height)) {
-        return this.resizeTo(height);
       }
     };
 
